@@ -2,7 +2,8 @@ import psycopg2
 import os
 
 # Carga la URL de la base de datos desde las variables de entorno
-DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:admin1234@localhost:5432/envio_mensajes")
+DB_URL = os.getenv("DATABASE_URL")
+
 
 # Establecer conexión
 def conectar():
