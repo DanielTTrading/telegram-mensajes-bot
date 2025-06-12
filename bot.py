@@ -77,6 +77,11 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Registro cancelado.")
     return ConversationHandler.END
 
+async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    await update.message.reply_text("Has reiniciado el proceso. Usa /start para comenzar de nuevo.")
+    return ConversationHandler.END
+
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
         return
@@ -158,6 +163,7 @@ async def configurar_menu_completo(app: Application):
     comandos = [
         BotCommand("menu", "Enviar mensaje por membresía"),
         BotCommand("listar", "Listar usuarios registrados"),
+        BotCommand("reset", "Reiniciar registro"),
     ]
     await app.bot.set_my_commands(comandos)
     await app.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
@@ -174,7 +180,10 @@ def main():
             PEDIR_CORREO: [MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_correo)],
             PEDIR_ROL: [MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_rol)],
         },
-        fallbacks=[CommandHandler("cancelar", cancelar)],
+        fallbacks=[
+            CommandHandler("cancelar", cancelar),
+            CommandHandler("reset", reset)
+        ],
     )
 
     envio = ConversationHandler(
@@ -187,6 +196,7 @@ def main():
     app.add_handler(envio)
     app.add_handler(CommandHandler("menu", menu))
     app.add_handler(CommandHandler("listar", listar))
+    app.add_handler(CommandHandler("reset", reset))
 
     print("Bot corriendo...")
 
