@@ -21,7 +21,7 @@ import asyncio
 import os
 
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_IDS = [7710920544, 7560374352]  # Admins permitidos
+ADMIN_IDS = [7710920544, 7560374352]
 
 PEDIR_NOMBRE, PEDIR_TELEFONO, PEDIR_CORREO, PEDIR_ROL = range(4)
 ESPERANDO_MENSAJE = "ESPERANDO_MENSAJE"
@@ -107,7 +107,7 @@ async def seleccionar_rol(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "todos": "todos"
     }.get(query.data)
 
-    await query.message.reply_text("Escribe el mensaje que deseas enviar (puedes incluir imagen).")
+    await query.message.reply_text("Escribe el mensaje que deseas enviar (puedes incluir imagen o video).")
     return ESPERANDO_MENSAJE
 
 async def enviar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -121,6 +121,7 @@ async def enviar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     enviados = 0
 
+    # Imagen
     if update.message.photo:
         foto = update.message.photo[-1]
         archivo = await foto.get_file()
@@ -136,6 +137,25 @@ async def enviar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 pass
         os.remove(image_path)
+
+    # Video
+    elif update.message.video:
+        video = update.message.video
+        archivo = await video.get_file()
+        os.makedirs("videos_temp", exist_ok=True)
+        video_path = f"videos_temp/temp_{update.effective_user.id}.mp4"
+        await archivo.download_to_drive(video_path)
+
+        for user_id in usuarios:
+            try:
+                with open(video_path, "rb") as vid:
+                    await context.bot.send_video(chat_id=user_id, video=vid, caption=mensaje)
+                    enviados += 1
+            except:
+                pass
+        os.remove(video_path)
+
+    # Texto
     else:
         for user_id in usuarios:
             try:
@@ -188,7 +208,7 @@ def main():
 
     envio = ConversationHandler(
         entry_points=[CallbackQueryHandler(seleccionar_rol)],
-        states={ESPERANDO_MENSAJE: [MessageHandler(filters.TEXT | filters.PHOTO, enviar_mensaje)]},
+        states={ESPERANDO_MENSAJE: [MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO, enviar_mensaje)]},
         fallbacks=[],
     )
 
