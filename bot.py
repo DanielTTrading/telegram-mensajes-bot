@@ -107,7 +107,7 @@ async def seleccionar_rol(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "todos": "todos"
     }.get(query.data)
 
-    await query.message.reply_text("Escribe el mensaje que deseas enviar (puedes incluir imagen o video).")
+    await query.message.reply_text("Escribe el mensaje que deseas enviar (puedes incluir imagen, video o documento).")
     return ESPERANDO_MENSAJE
 
 async def enviar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -121,14 +121,11 @@ async def enviar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     enviados = 0
 
-    # Imagen
     if update.message.photo:
-        foto = update.message.photo[-1]
-        archivo = await foto.get_file()
+        archivo = await update.message.photo[-1].get_file()
         os.makedirs("imagenes_temp", exist_ok=True)
         image_path = f"imagenes_temp/temp_{update.effective_user.id}.jpg"
         await archivo.download_to_drive(image_path)
-
         for user_id in usuarios:
             try:
                 with open(image_path, "rb") as img:
@@ -138,14 +135,11 @@ async def enviar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         os.remove(image_path)
 
-    # Video
     elif update.message.video:
-        video = update.message.video
-        archivo = await video.get_file()
+        archivo = await update.message.video.get_file()
         os.makedirs("videos_temp", exist_ok=True)
         video_path = f"videos_temp/temp_{update.effective_user.id}.mp4"
         await archivo.download_to_drive(video_path)
-
         for user_id in usuarios:
             try:
                 with open(video_path, "rb") as vid:
@@ -155,7 +149,20 @@ async def enviar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         os.remove(video_path)
 
-    # Texto
+    elif update.message.document:
+        archivo = await update.message.document.get_file()
+        os.makedirs("docs_temp", exist_ok=True)
+        doc_path = f"docs_temp/{update.message.document.file_name}"
+        await archivo.download_to_drive(doc_path)
+        for user_id in usuarios:
+            try:
+                with open(doc_path, "rb") as doc:
+                    await context.bot.send_document(chat_id=user_id, document=doc, caption=mensaje)
+                    enviados += 1
+            except:
+                pass
+        os.remove(doc_path)
+
     else:
         for user_id in usuarios:
             try:
@@ -208,7 +215,9 @@ def main():
 
     envio = ConversationHandler(
         entry_points=[CallbackQueryHandler(seleccionar_rol)],
-        states={ESPERANDO_MENSAJE: [MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO, enviar_mensaje)]},
+        states={ESPERANDO_MENSAJE: [
+            MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO | filters.DOCUMENT, enviar_mensaje)
+        ]},
         fallbacks=[],
     )
 
