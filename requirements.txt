@@ -1,1 +1,2 @@
--e "python-telegram-bot==20.6\npsycopg2-binary" 
+python-telegram-bot==20.6
+psycopg2-binary
