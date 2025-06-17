@@ -21,7 +21,7 @@ import asyncio
 import os
 
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_IDS = [7710920544, 7560374352]
+ADMIN_IDS = [7710920544, 7560374352, 7837963996]  # Nuevo admin agregado
 
 PEDIR_NOMBRE, PEDIR_TELEFONO, PEDIR_CORREO, PEDIR_ROL = range(4)
 ESPERANDO_MENSAJE = "ESPERANDO_MENSAJE"
@@ -36,7 +36,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def recibir_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["nombre"] = update.message.text
-    boton = [[KeyboardButton("Compartir mi número \ud83d\udcde", request_contact=True)]]
+    boton = [[KeyboardButton("Compartir mi número 📞", request_contact=True)]]
     await update.message.reply_text(
         "Ahora, por favor comparte tu número de teléfono:",
         reply_markup=ReplyKeyboardMarkup(boton, one_time_keyboard=True)
@@ -86,9 +86,9 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
         return
     teclado = [
-        [InlineKeyboardButton("\ud83d\udce9 Membresía Básica", callback_data="basica")],
-        [InlineKeyboardButton("\ud83c\udfc6 Membresía Platinum", callback_data="platinum")],
-        [InlineKeyboardButton("\ud83d\udce4 Enviar a Todos", callback_data="todos")]
+        [InlineKeyboardButton("📩 Membresía Básica", callback_data="basica")],
+        [InlineKeyboardButton("🏆 Membresía Platinum", callback_data="platinum")],
+        [InlineKeyboardButton("📤 Enviar a Todos", callback_data="todos")]
     ]
     await update.message.reply_text(
         "¿A qué grupo deseas enviar el mensaje?",
@@ -121,6 +121,9 @@ async def enviar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     enviados = 0
 
+    def log_error(uid, e):
+        print(f"❌ Error al enviar mensaje a {uid}: {e}")
+
     if update.message.photo:
         archivo = await update.message.photo[-1].get_file()
         path = f"imagenes_temp/{update.effective_user.id}.jpg"
@@ -131,7 +134,8 @@ async def enviar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 with open(path, "rb") as f:
                     await context.bot.send_photo(chat_id=uid, photo=f, caption=mensaje)
                     enviados += 1
-            except: pass
+            except Exception as e:
+                log_error(uid, e)
         os.remove(path)
 
     elif update.message.video:
@@ -144,7 +148,8 @@ async def enviar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 with open(path, "rb") as f:
                     await context.bot.send_video(chat_id=uid, video=f, caption=mensaje)
                     enviados += 1
-            except: pass
+            except Exception as e:
+                log_error(uid, e)
         os.remove(path)
 
     elif update.message.document and update.message.document.mime_type == "application/pdf":
@@ -157,7 +162,8 @@ async def enviar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 with open(path, "rb") as f:
                     await context.bot.send_document(chat_id=uid, document=f, caption=mensaje)
                     enviados += 1
-            except: pass
+            except Exception as e:
+                log_error(uid, e)
         os.remove(path)
 
     elif update.message.voice:
@@ -170,7 +176,8 @@ async def enviar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 with open(path, "rb") as f:
                     await context.bot.send_voice(chat_id=uid, voice=f, caption=mensaje)
                     enviados += 1
-            except: pass
+            except Exception as e:
+                log_error(uid, e)
         os.remove(path)
 
     elif update.message.audio:
@@ -183,7 +190,8 @@ async def enviar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 with open(path, "rb") as f:
                     await context.bot.send_audio(chat_id=uid, audio=f, caption=mensaje)
                     enviados += 1
-            except: pass
+            except Exception as e:
+                log_error(uid, e)
         os.remove(path)
 
     else:
@@ -191,9 +199,10 @@ async def enviar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(chat_id=uid, text=mensaje)
                 enviados += 1
-            except: pass
+            except Exception as e:
+                log_error(uid, e)
 
-    await update.message.reply_text(f"\u2705 Mensaje enviado a {enviados} usuario(s) del grupo '{rol}'")
+    await update.message.reply_text(f"✅ Mensaje enviado a {enviados} usuario(s) del grupo '{rol}'")
     return ConversationHandler.END
 
 async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -201,7 +210,7 @@ async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     b = obtener_usuarios_por_rol("Membresía Básica")
     p = obtener_usuarios_por_rol("Membresía Platinum")
-    msg = f"\ud83d\udc65 *Resumen de usuarios:*\n\n\ud83d\udce9 Membresía Básica: {len(b)} usuarios\n\ud83c\udfc6 Membresía Platinum: {len(p)} usuarios"
+    msg = f"👥 *Resumen de usuarios:*\n\n📩 Membresía Básica: {len(b)} usuarios\n🏆 Membresía Platinum: {len(p)} usuarios"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def configurar_menu_completo(app: Application):
