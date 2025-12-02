@@ -118,21 +118,23 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
             print("IMAP no configurado correctamente (IMAP_HOST/IMAP_USER/IMAP_PASS faltan).")
             return
 
+        # Conectarse al servidor IMAP
         mail = imaplib.IMAP4_SSL(IMAP_HOST)
         mail.login(IMAP_USER, IMAP_PASS)
         mail.select("INBOX")
 
-        # Solo correos NO leídos, de TradingView y del día de hoy
-        today_str = datetime.utcnow().strftime("%d-%b-%Y")  # ej: "01-Dec-2025"
-        criteria = f'(UNSEEN FROM "{TRADINGVIEW_SENDER}" SINCE {today_str})'
-        status, data = mail.search(None, criteria)
+        # 🔁 Buscar TODOS los correos NO leídos (UNSEEN)
+        status, data = mail.search(None, "UNSEEN")
 
         if status != "OK":
+            print(f"[IMAP] Error en search UNSEEN: {status}, {data}")
             mail.close()
             mail.logout()
             return
 
         ids = data[0].split()
+        print(f"[IMAP] Mensajes no leídos encontrados: {len(ids)}")
+
         if not ids:
             mail.close()
             mail.logout()
@@ -141,28 +143,46 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
         for msg_id in ids:
             status, msg_data = mail.fetch(msg_id, "(RFC822)")
             if status != "OK":
+                print(f"[IMAP] Error al hacer fetch de {msg_id}: {status}")
                 continue
 
             raw_email = msg_data[0][1]
             msg = email.message_from_bytes(raw_email)
 
             subject = _decode_header_value(msg.get("Subject") or "")
+            from_header = _decode_header_value(msg.get("From") or "")
             body = _get_email_body(msg)
 
             subject_lower = subject.lower()
+            from_lower = from_header.lower()
 
+            print(f"[IMAP] Revisando mensaje ID {msg_id.decode('utf-8')}:")
+            print(f"       From: {from_header}")
+            print(f"       Subject: {subject}")
+
+            # 🔍 Solo correos relacionados con TradingView
+            if "tradingview" not in from_lower and "tradingview" not in subject_lower:
+                print("       → No es correo de TradingView, se ignora.")
+                # Marcar como leído para no repetirlo en el futuro
+                mail.store(msg_id, "+FLAGS", "\\Seen")
+                continue
+
+            # Determinar tipo de alerta por el asunto
             if "stop loss" in subject_lower:
                 tipo_alerta = "stop_loss"
             elif "profit" in subject_lower:
                 tipo_alerta = "profit"
             else:
-                print(f"Correo ignorado (asunto no manejado): {subject}")
+                print("       → Asunto no contiene stop loss ni profit, se ignora.")
+                mail.store(msg_id, "+FLAGS", "\\Seen")
                 continue
 
+            # Extraer ticker y precio del cuerpo
             ticker, price = _parse_tradingview_alert(body)
 
             if not ticker or not price:
-                print(f"No se pudo extraer ticker/precio del correo. Asunto: {subject}")
+                print("       → No se pudo extraer ticker/precio del correo. Se ignora.")
+                mail.store(msg_id, "+FLAGS", "\\Seen")
                 continue
 
             nombre_activo = _formatear_nombre_activo(ticker)
@@ -189,7 +209,7 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
 
             # Usuarios de TODOS (Básica + Platinum)
             usuarios = obtener_usuarios_por_rol("Membresía Básica") + obtener_usuarios_por_rol("Membresía Platinum")
-            usuarios_unicos = list(dict.fromkeys(usuarios))  # quitar duplicados manteniendo orden
+            usuarios_unicos = list(dict.fromkeys(usuarios))  # quitar duplicados
 
             enviados = 0
             for uid in usuarios_unicos:
@@ -204,7 +224,7 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
                 f"Tipo: {tipo_alerta}, ticker: {ticker}, precio: {price}"
             )
 
-            # 🔔 NUEVO: enviar resumen a los administradores
+            # Resumen para administradores
             resumen_admin = (
                 f"🔔 Alerta TradingView procesada\n\n"
                 f"Tipo: {tipo_texto}\n"
@@ -219,11 +239,15 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
                 except Exception as e:
                     print(f"❌ Error al enviar resumen a admin {admin_id}: {e}")
 
+            # 🔒 Muy importante: marcar este correo como leído para NO repetirlo
+            mail.store(msg_id, "+FLAGS", "\\Seen")
+
         mail.close()
         mail.logout()
 
     except Exception as e:
         print(f"Error en revisar_correo_y_enviar: {e}")
+
 
 
 
