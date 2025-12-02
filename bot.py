@@ -37,7 +37,7 @@ ESPERANDO_MENSAJE = "ESPERANDO_MENSAJE"
 IMAP_HOST = os.getenv("IMAP_HOST", "imap.gmail.com")
 IMAP_USER = os.getenv("IMAP_USER")
 IMAP_PASS = os.getenv("IMAP_PASS")
-TRADINGVIEW_SENDER = "noreply@tradingview.com"
+TRADINGVIEW_SENDER = "noreply@tradingview.com"  # hoy no lo usamos, pero lo dejamos
 
 # --- NUEVO: mapeo de ticker a nombre “bonito” ---
 TICKER_NOMBRE = {
@@ -89,7 +89,8 @@ def _parse_tradingview_alert(body: str):
             ticker = parts[-1].upper()
             break
 
-    # 2) Buscar línea con el cruce y el precio, p.ej. "NVDA Cruce 172,67" o "CORFICOLCF Cruce ascendente 18.400"
+    # 2) Buscar línea con el cruce y el precio, p.ej. "NVDA Cruce 172,67"
+    #    o "CORFICOLCF Cruce ascendente 18.400"
     if ticker:
         for line in lines:
             if ticker in line and "Cruce" in line:
@@ -123,8 +124,10 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
         mail.login(IMAP_USER, IMAP_PASS)
         mail.select("INBOX")
 
-        # 🔁 Buscar TODOS los correos NO leídos (UNSEEN)
-        status, data = mail.search(None, "UNSEEN")
+        # 🔁 Solo NO leídos desde HOY
+        today_str = datetime.utcnow().strftime("%d-%b-%Y")  # ej: "02-Dec-2025"
+        status, data = mail.search(None, f'(UNSEEN SINCE {today_str})')
+        print(f"[IMAP] Buscando correos UNSEEN SINCE {today_str}")
 
         if status != "OK":
             print(f"[IMAP] Error en search UNSEEN: {status}, {data}")
@@ -162,9 +165,8 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
 
             # 🔍 Solo correos relacionados con TradingView
             if "tradingview" not in from_lower and "tradingview" not in subject_lower:
-                print("       → No es correo de TradingView, se ignora.")
-                # Marcar como leído para no repetirlo en el futuro
-                mail.store(msg_id, "+FLAGS", "\\Seen")
+                print("       → No es correo de TradingView, se ignora (no se marca como leído).")
+                # NO lo marcamos como leído para no tocar tu inbox
                 continue
 
             # Determinar tipo de alerta por el asunto
@@ -173,7 +175,8 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
             elif "profit" in subject_lower:
                 tipo_alerta = "profit"
             else:
-                print("       → Asunto no contiene stop loss ni profit, se ignora.")
+                print("       → Asunto no contiene stop loss ni profit, se ignora (TradingView pero no alerta manejada).")
+                # Aquí SÍ lo marcamos como leído para que no lo repita en el job
                 mail.store(msg_id, "+FLAGS", "\\Seen")
                 continue
 
@@ -182,6 +185,7 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
 
             if not ticker or not price:
                 print("       → No se pudo extraer ticker/precio del correo. Se ignora.")
+                # También lo marcamos como leído para que no lo intente infinitamente
                 mail.store(msg_id, "+FLAGS", "\\Seen")
                 continue
 
@@ -220,7 +224,7 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
                     print(f"❌ Error al enviar mensaje TradingView a {uid}: {e}")
 
             print(
-                f"✅ Alerta TradingView enviada a {enviados} usuario(s). "
+                f"✅ The alerta TradingView enviada a {enviados} usuario(s). "
                 f"Tipo: {tipo_alerta}, ticker: {ticker}, precio: {price}"
             )
 
@@ -239,7 +243,7 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
                 except Exception as e:
                     print(f"❌ Error al enviar resumen a admin {admin_id}: {e}")
 
-            # 🔒 Muy importante: marcar este correo como leído para NO repetirlo
+            # 🔒 Muy importante: este SÍ lo marcamos como leído para no repetirlo
             mail.store(msg_id, "+FLAGS", "\\Seen")
 
         mail.close()
@@ -247,8 +251,6 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Error en revisar_correo_y_enviar: {e}")
-
-
 
 
 # ----------------------- TUS FUNCIONES ORIGINALES -----------------------
