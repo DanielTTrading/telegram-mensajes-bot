@@ -185,7 +185,8 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
             return
 
         for msg_id in ids:
-            status, msg_data = mail.fetch(msg_id, "(RFC822)")
+            # ⬇️ IMPORTANTE: usar BODY.PEEK[] para NO marcar como leído al hacer fetch
+            status, msg_data = mail.fetch(msg_id, "(BODY.PEEK[])")
             if status != "OK":
                 print(f"[IMAP] Error al hacer fetch de {msg_id}: {status}")
                 continue
@@ -207,7 +208,7 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
             # Solo correos relacionados con TradingView
             if "tradingview" not in from_lower and "tradingview" not in subject_lower:
                 print("       → No es correo de TradingView, se ignora (no se marca como leído).")
-                # IMPORTANTE: NO marcar como leído
+                # NO se marca como leído
                 continue
 
             # Determinar tipo de alerta por el asunto
@@ -217,7 +218,7 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
                 tipo_alerta = "profit"
             else:
                 print("       → Asunto no contiene stop loss ni profit, se ignora.")
-                # Este SÍ es de TradingView, no queremos repetirlo:
+                # Es TradingView, pero no nos sirve → lo marcamos para no repetir
                 mail.store(msg_id, "+FLAGS", "\\Seen")
                 continue
 
@@ -235,19 +236,19 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
             # Construir mensaje para los miembros
             if tipo_alerta == "stop_loss":
                 texto_para_miembros = (
-                    f"Saludos.\n\n"
-                    f"Estamos ejecutando stop loss en \"{nombre_activo}\" en \"{price}\".\n\n"
-                    f"Saludos,\n"
+                    f"Atención🚨\n\n"
+                    f"Estamos ejecutando stop loss en {nombre_activo} en {price}.\n\n"
+                    f"Saludos.\n"
                     f"Equipo JP Tactical Trading."
                 )
                 tipo_texto = "Stop loss"
             else:  # profit
                 porcentaje = random.choice([30, 40])
                 texto_para_miembros = (
-                    f"Saludos.\n\n"
-                    f"Estamos ejecutando toma de utilidad en \"{nombre_activo}\" en \"{price}\", "
-                    f"alcanzando una rentabilidad de \"{porcentaje}%\".\n\n"
-                    f"Saludos,\n"
+                    f"Atención🚨\n\n"
+                    f"Estamos tomando utilidades en {nombre_activo}, cerrando en {porcentaje}%"
+                    f"de la posición en {price}.\n\n"
+                    f"Saludos.\n"
                     f"Equipo JP Tactical Trading."
                 )
                 tipo_texto = "Toma de utilidad"
@@ -284,7 +285,7 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
                 except Exception as e:
                     print(f"❌ Error al enviar resumen a admin {admin_id}: {e}")
 
-            # SOLO Correos de TradingView se marcan como leídos
+            # SOLO correos de TradingView que ya procesamos se marcan como leídos
             mail.store(msg_id, "+FLAGS", "\\Seen")
 
         mail.close()
