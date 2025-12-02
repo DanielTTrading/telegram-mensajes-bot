@@ -26,6 +26,8 @@ import email
 from email.header import decode_header
 import random
 from datetime import datetime  # para la fecha de hoy en IMAP
+import re
+import html as html_lib
 
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = [7710920544, 7560374352, 7837963996, 8465613365]  # Nuevo admin agregado
@@ -37,7 +39,8 @@ ESPERANDO_MENSAJE = "ESPERANDO_MENSAJE"
 IMAP_HOST = os.getenv("IMAP_HOST", "imap.gmail.com")
 IMAP_USER = os.getenv("IMAP_USER")
 IMAP_PASS = os.getenv("IMAP_PASS")
-TRADINGVIEW_SENDER = "noreply@tradingview.com"  # hoy no lo usamos, pero lo dejamos
+TRADINGVIEW_SENDER = "noreply@tradingview.com"  # solo referencial, usamos 'tradingview' en el From
+
 
 # --- NUEVO: mapeo de ticker a nombre “bonito” ---
 TICKER_NOMBRE = {
@@ -56,20 +59,59 @@ def _decode_header_value(value):
     return decoded
 
 
+def _html_to_text(html_content: str) -> str:
+    """Convierte HTML sencillo en texto plano."""
+    if not html_content:
+        return ""
+    # Reemplazar <br> y <p> por saltos de línea
+    html_content = html_content.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+    html_content = html_content.replace("</p>", "\n").replace("</div>", "\n")
+    # Eliminar todas las etiquetas
+    text = re.sub(r"<[^>]+>", "", html_content)
+    # Decodificar entidades HTML
+    text = html_lib.unescape(text)
+    # Limpiar espacios
+    return "\n".join(line.strip() for line in text.splitlines() if line.strip())
+
+
 def _get_email_body(msg):
-    # intentamos sacar texto plano
+    """
+    Intenta obtener primero 'text/plain'.
+    Si no existe, toma 'text/html' y lo convierte a texto plano.
+    """
+    text_plain = None
+    html_part = None
+
     if msg.is_multipart():
         for part in msg.walk():
             content_type = part.get_content_type()
             content_disposition = str(part.get("Content-Disposition") or "")
-            if content_type == "text/plain" and "attachment" not in content_disposition:
+
+            if "attachment" in content_disposition:
+                continue
+
+            if content_type == "text/plain" and text_plain is None:
                 payload = part.get_payload(decode=True)
                 if payload:
-                    return payload.decode(part.get_content_charset() or "utf-8", errors="ignore").strip()
+                    text_plain = payload.decode(part.get_content_charset() or "utf-8", errors="ignore")
+
+            elif content_type == "text/html" and html_part is None:
+                payload = part.get_payload(decode=True)
+                if payload:
+                    html_part = payload.decode(part.get_content_charset() or "utf-8", errors="ignore")
     else:
+        content_type = msg.get_content_type()
         payload = msg.get_payload(decode=True)
         if payload:
-            return payload.decode(msg.get_content_charset() or "utf-8", errors="ignore").strip()
+            if content_type == "text/plain":
+                text_plain = payload.decode(msg.get_content_charset() or "utf-8", errors="ignore")
+            elif content_type == "text/html":
+                html_part = payload.decode(msg.get_content_charset() or "utf-8", errors="ignore")
+
+    if text_plain:
+        return text_plain.strip()
+    if html_part:
+        return _html_to_text(html_part)
     return ""
 
 
@@ -82,14 +124,14 @@ def _parse_tradingview_alert(body: str):
     ticker = None
     price = None
 
-    # 1) Buscar línea tipo "Se ha activado su alerta NVDA"
+    # 1) Buscar línea tipo "Se ha activado su alerta BTCUSD"
     for line in lines:
         if "Se ha activado su alerta" in line:
             parts = line.split()
             ticker = parts[-1].upper()
             break
 
-    # 2) Buscar línea con el cruce y el precio, p.ej. "NVDA Cruce 172,67"
+    # 2) Buscar línea con el cruce y el precio, p.ej. "BTCUSD Cruce 91.999,00"
     #    o "CORFICOLCF Cruce ascendente 18.400"
     if ticker:
         for line in lines:
@@ -119,18 +161,17 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
             print("IMAP no configurado correctamente (IMAP_HOST/IMAP_USER/IMAP_PASS faltan).")
             return
 
-        # Conectarse al servidor IMAP
         mail = imaplib.IMAP4_SSL(IMAP_HOST)
         mail.login(IMAP_USER, IMAP_PASS)
         mail.select("INBOX")
 
-        # 🔁 Solo NO leídos desde HOY
+        # Solo correos NO leídos del día de hoy
         today_str = datetime.utcnow().strftime("%d-%b-%Y")  # ej: "02-Dec-2025"
-        status, data = mail.search(None, f'(UNSEEN SINCE {today_str})')
         print(f"[IMAP] Buscando correos UNSEEN SINCE {today_str}")
+        status, data = mail.search(None, "UNSEEN", "SINCE", today_str)
 
         if status != "OK":
-            print(f"[IMAP] Error en search UNSEEN: {status}, {data}")
+            print(f"[IMAP] Error en search UNSEEN SINCE: {status}, {data}")
             mail.close()
             mail.logout()
             return
@@ -163,10 +204,10 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
             print(f"       From: {from_header}")
             print(f"       Subject: {subject}")
 
-            # 🔍 Solo correos relacionados con TradingView
+            # Solo correos relacionados con TradingView
             if "tradingview" not in from_lower and "tradingview" not in subject_lower:
                 print("       → No es correo de TradingView, se ignora (no se marca como leído).")
-                # NO lo marcamos como leído para no tocar tu inbox
+                # IMPORTANTE: NO marcar como leído
                 continue
 
             # Determinar tipo de alerta por el asunto
@@ -175,8 +216,8 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
             elif "profit" in subject_lower:
                 tipo_alerta = "profit"
             else:
-                print("       → Asunto no contiene stop loss ni profit, se ignora (TradingView pero no alerta manejada).")
-                # Aquí SÍ lo marcamos como leído para que no lo repita en el job
+                print("       → Asunto no contiene stop loss ni profit, se ignora.")
+                # Este SÍ es de TradingView, no queremos repetirlo:
                 mail.store(msg_id, "+FLAGS", "\\Seen")
                 continue
 
@@ -185,7 +226,7 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
 
             if not ticker or not price:
                 print("       → No se pudo extraer ticker/precio del correo. Se ignora.")
-                # También lo marcamos como leído para que no lo intente infinitamente
+                # También lo marcamos como leído para no repetirlo
                 mail.store(msg_id, "+FLAGS", "\\Seen")
                 continue
 
@@ -224,7 +265,7 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
                     print(f"❌ Error al enviar mensaje TradingView a {uid}: {e}")
 
             print(
-                f"✅ The alerta TradingView enviada a {enviados} usuario(s). "
+                f"✅ Alerta TradingView enviada a {enviados} usuario(s). "
                 f"Tipo: {tipo_alerta}, ticker: {ticker}, precio: {price}"
             )
 
@@ -243,7 +284,7 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
                 except Exception as e:
                     print(f"❌ Error al enviar resumen a admin {admin_id}: {e}")
 
-            # 🔒 Muy importante: este SÍ lo marcamos como leído para no repetirlo
+            # SOLO Correos de TradingView se marcan como leídos
             mail.store(msg_id, "+FLAGS", "\\Seen")
 
         mail.close()
@@ -508,7 +549,7 @@ def main():
 
     loop.run_until_complete(configurar_menu_completo(app))
 
-    # --- NUEVO: programar el job que revisa el correo cada 10 segundos ---
+    # Programar el job que revisa el correo cada 10 segundos
     job_queue = app.job_queue
     job_queue.run_repeating(revisar_correo_y_enviar, interval=10, first=10)
 
