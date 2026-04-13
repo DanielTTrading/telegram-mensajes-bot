@@ -116,31 +116,46 @@ def _get_email_body(msg):
 
 
 def _parse_tradingview_alert(body: str):
-    """
-    Intenta extraer ticker y precio del cuerpo del correo de TradingView.
-    Devuelve (ticker, precio) o (None, None) si no puede.
-    """
     lines = [l.strip() for l in body.splitlines() if l.strip()]
     ticker = None
     price = None
 
-    # 1) Buscar línea tipo "Se ha activado su alerta BTCUSD"
+    # 1) Español: "Se ha activado su alerta BTCUSD"
     for line in lines:
         if "Se ha activado su alerta" in line:
             parts = line.split()
             ticker = parts[-1].upper()
             break
 
-    # 2) Buscar línea con el cruce y el precio, p.ej. "BTCUSD Cruce 91.999,00"
-    #    o "CORFICOLCF Cruce ascendente 18.400"
+    # 2) Inglés: "Your QLYS alert was triggered"
+    if not ticker:
+        for line in lines:
+            low = line.lower()
+            if "alert was triggered" in low:
+                parts = line.split()
+                if "alert" in parts:
+                    idx = parts.index("alert")
+                    if idx > 0:
+                        ticker = parts[idx - 1].upper()
+                        break
+
+    # 3) Buscar precio en línea tipo:
+    #    "QLYS Cruce descendente 81,45"
+    #    "BTCUSD Cruce 91.999,00"
+    #    "NVDA Crossing 172.67"
     if ticker:
         for line in lines:
-            if ticker in line and "Cruce" in line:
+            low = line.lower()
+            if ticker in line and (
+                "cruce" in low or
+                "cross" in low or
+                "crossing" in low
+            ):
                 tokens = line.split()
-                # Tomamos el último token que tenga dígitos
                 for token in reversed(tokens):
-                    if any(ch.isdigit() for ch in token):
-                        price = token
+                    limpio = token.strip(" ,:;()[]\"'")
+                    if any(ch.isdigit() for ch in limpio):
+                        price = limpio
                         break
                 if price:
                     break
@@ -214,11 +229,10 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
             # Determinar tipo de alerta por el asunto
             if "stop loss" in subject_lower:
                 tipo_alerta = "stop_loss"
-            elif "profit" in subject_lower:
+            elif "profit" in subject_lower or "take profit" in subject_lower:
                 tipo_alerta = "profit"
             else:
                 print("       → Asunto no contiene stop loss ni profit, se ignora.")
-                # Es TradingView, pero no nos sirve → lo marcamos para no repetir
                 mail.store(msg_id, "+FLAGS", "\\Seen")
                 continue
 
