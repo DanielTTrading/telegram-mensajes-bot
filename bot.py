@@ -260,7 +260,7 @@ async def revisar_correo_y_enviar(context: ContextTypes.DEFAULT_TYPE):
                 porcentaje = random.choice([30, 40])
                 texto_para_miembros = (
                     f"Atención🚨\n\n"
-                    f"Estamos tomando utilidades en {nombre_activo}, cerrando en {porcentaje}%"
+                    f"Estamos tomando utilidades en {nombre_activo}, cerrando en {porcentaje} %"
                     f"de la posición en {price}.\n\n"
                     f"Saludos.\n"
                     f"Equipo JP Tactical Trading."
