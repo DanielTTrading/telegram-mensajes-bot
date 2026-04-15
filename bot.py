@@ -32,7 +32,7 @@ import html as html_lib
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = [7710920544, 7560374352, 7837963996, 8465613365]  # Nuevo admin agregado
 
-PEDIR_NOMBRE, PEDIR_TELEFONO, PEDIR_CORREO, PEDIR_ROL = range(4)
+PEDIR_NOMBRE, PEDIR_TELEFONO, PEDIR_CORREO = range(3)
 ESPERANDO_MENSAJE = "ESPERANDO_MENSAJE"
 
 # --- NUEVO: configuración IMAP ---
@@ -342,13 +342,15 @@ async def recibir_telefono(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def recibir_correo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["correo"] = update.message.text
-    opciones = [["Membresía Básica"], ["Membresía Platinum"]]
-    await update.message.reply_text(
-        "¿Cuál es tu tipo de membresía?",
-        reply_markup=ReplyKeyboardMarkup(opciones, one_time_keyboard=True, resize_keyboard=True)
-    )
-    return PEDIR_ROL
+    correo = update.message.text
+    nombre = context.user_data["nombre"]
+    telefono = context.user_data["telefono"]
+    user_id = update.effective_user.id
+    rol = "Membresía Platinum"
+
+    guardar_usuario(user_id, nombre, telefono, correo, rol)
+    await update.message.reply_text(f"¡Gracias {nombre}! Quedaste registrado correctamente con la membresía '{rol}'.")
+    return ConversationHandler.END
 
 
 async def recibir_rol(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -529,7 +531,6 @@ def main():
             PEDIR_NOMBRE: [MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_nombre)],
             PEDIR_TELEFONO: [MessageHandler(filters.CONTACT, recibir_telefono)],
             PEDIR_CORREO: [MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_correo)],
-            PEDIR_ROL: [MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_rol)],
         },
         fallbacks=[
             CommandHandler("cancelar", cancelar),
